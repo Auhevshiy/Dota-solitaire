@@ -1,1 +1,149 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пасьянс-Стратегия</title>
+    <style>
+        body { font-family: sans-serif; background: #2c3e50; color: white; text-align: center; }
+        .hidden { display: none; }
+        #game-board { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; }
+        .player-zone { border: 2px solid #ecf0f1; padding: 10px; border-radius: 10px; min-height: 200px; }
+        .card { background: #34495e; border: 1px solid white; margin: 5px; padding: 5px; display: inline-block; }
+        .controls { margin-top: 20px; }
+    </style>
+</head>
+<body>
 
+    <div id="auth-screen">
+        <h1>Карточная Стратегия</h1>
+        <button onclick="createRoom()">Создать Лобби</button>
+        <p>ИЛИ</p>
+        <input type="text" id="joinInput" placeholder="Код лобби">
+        <button onclick="joinRoom()">Войти по коду</button>
+    </div>
+
+    <div id="game-screen" class="hidden">
+        <h2>Комната: <span id="room-id-display"></span></h2>
+        <h3 id="turn-display">Очередь игрока: ...</h3>
+        <div id="game-board">
+            <div class="player-zone" id="zone-p1"><h3>Игрок 1</h3><div class="cards"></div></div>
+            <div class="player-zone" id="zone-p2"><h3>Игрок 2</h3><div class="cards"></div></div>
+            <div class="player-zone" id="zone-p3"><h3>Игрок 3</h3><div class="cards"></div></div>
+            <div class="player-zone" id="zone-p4"><h3>Игрок 4</h3><div class="cards"></div></div>
+        </div>
+        <div class="controls">
+            <button onclick="takeAction()">Потратить ход (Тест)</button>
+            <button onclick="endTurn()">Завершить ход</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://gstatic.com";
+        import { getDatabase, ref, set, onValue, update } from "https://gstatic.com";
+
+        // ВСТАВЬ СВОИ ДАННЫЕ ИЗ КОНСОЛИ FIREBASE ТУТ:
+        const firebaseConfig = {
+            apiKey: "AIzaSyAOAUIfSDThhUFxXAE6U-cju_jVFCKtheI",
+            authDomain: "dota-solitaire.firebaseapp.com",
+            databaseURL: "https://dota-solitaire-default-rtdb.europe-west1.firebasedatabase.app://firebaseio.com",
+            projectId: "dota-solitaire",
+            storageBucket: "dota-solitaire.firebasestorage.app",
+            messagingSenderId: "204539165690",
+            appId: "1:204539165690:web:088ca4ecdc17c17aef0243"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let myPlayerId = null; 
+        let currentRoom = null;
+
+        // СОЗДАНИЕ ЛОББИ
+        window.createRoom = function() {
+            const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            myPlayerId = "p1";
+            const roomRef = ref(db, 'rooms/' + roomId);
+            
+            set(roomRef, {
+                turn: "p1",
+                actions: 3,
+                playersCount: 1,
+                cards: {
+                    p1: [{id: 1, name: "7 Пик", lvl: 1, hp: 2}] // Стартовая карта для теста
+                }
+            }).then(() => startGame(roomId));
+        }
+
+        // ВХОД В ЛОББИ
+        window.joinRoom = function() {
+            const roomId = document.getElementById('joinInput').value.toUpperCase();
+            const roomRef = ref(db, 'rooms/' + roomId);
+
+            onValue(roomRef, (snapshot) => {
+                if (snapshot.exists() && !myPlayerId) {
+                    const data = snapshot.val();
+                    myPlayerId = "p" + (data.playersCount + 1);
+                    update(roomRef, { playersCount: data.playersCount + 1 });
+                    startGame(roomId);
+                }
+            }, { onlyOnce: true });
+        }
+
+        function startGame(roomId) {
+            currentRoom = roomId;
+            document.getElementById('auth-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('room-id-display').innerText = roomId;
+
+            // СЛУШАЕМ ОБНОВЛЕНИЯ БАЗЫ (СИНХРОНИЗАЦИЯ)
+            onValue(ref(db, 'rooms/' + roomId), (snapshot) => {
+                const data = snapshot.val();
+                renderBoard(data);
+            });
+        }
+
+        function renderBoard(data) {
+            document.getElementById('turn-display').innerText = `Ходит: ${data.turn} | Осталось ходов: ${data.actions}`;
+            
+            // Отрисовка карт каждого игрока
+            for (let i = 1; i <= 4; i++) {
+                const zone = document.querySelector(`#zone-p${i} .cards`);
+                zone.innerHTML = "";
+                if (data.cards && data.cards["p"+i]) {
+                    data.cards["p"+i].forEach(card => {
+                        zone.innerHTML += `<div class="card">${card.name}<br>LVL: ${card.lvl} | HP: ${card.hp}</div>`;
+                    });
+                }
+            }
+        }
+
+        // ТРАТА ХОДА
+        window.takeAction = function() {
+            const roomRef = ref(db, 'rooms/' + currentRoom);
+            onValue(roomRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data.turn === myPlayerId && data.actions > 0) {
+                    update(roomRef, { actions: data.actions - 1 });
+                }
+            }, { onlyOnce: true });
+        }
+
+        // КОНЕЦ ХОДА
+        window.endTurn = function() {
+            const roomRef = ref(db, 'rooms/' + currentRoom);
+            onValue(roomRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data.turn === myPlayerId) {
+                    let nextP = (parseInt(myPlayerId[1]) % 4) + 1;
+                    update(roomRef, { 
+                        turn: "p" + nextP, 
+                        actions: 3 
+                    });
+                }
+            }, { onlyOnce: true });
+        }
+    </script>
+</body>
+</html>
