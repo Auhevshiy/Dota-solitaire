@@ -23,27 +23,32 @@
     </div>
 
     <script>
-        let peer;
-        let connections = [];
-        let isHost = false;
+let peer;
+let connections = [];
 
-        // --- ЛОГИКА СЕТИ (PeerJS) ---
+function createGame() {
+    console.log("Попытка создать лобби...");
+    
+    // Создаем объект Peer с настройками по умолчанию
+    peer = new Peer(); 
 
-        // Создание лобби (Хост)
-        function createGame() {
-            peer = new Peer(); // Генерирует случайный ID
-            peer.on('open', (id) => {
-                isHost = true;
-                document.getElementById('status').innerText = "Твой код лобби: " + id;
-                document.getElementById('menu').style.display = 'none';
-            });
+    peer.on('open', (id) => {
+        console.log("Лобби успешно создано! ID:", id);
+        document.getElementById('status').innerText = "Твой код лобби: " + id;
+        document.getElementById('menu').style.display = 'none';
+    });
 
-            peer.on('connection', (conn) => {
-                connections.push(conn);
-                setupConnection(conn);
-                console.log("Игрок подключился!");
-            });
-        }
+    peer.on('error', (err) => {
+        console.error("Ошибка PeerJS:", err.type);
+        alert("Ошибка сети: " + err.type + ". Попробуй обновить страницу.");
+    });
+
+    peer.on('connection', (conn) => {
+        console.log("Кто-то подключился!");
+        setupConnection(conn);
+    });
+}
+
 
         // Подключение к хосту (Клиент)
         function joinGame() {
